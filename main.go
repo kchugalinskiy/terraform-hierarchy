@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
+	"regexp"
+	"strconv"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/hashicorp/hcl"
@@ -60,31 +62,37 @@ func main() {
 			log.Errorf("error reading file '%s' (SKIPPED): %v", file.Name(), err)
 		}
 	}
+
+	jsonState, err := json.Marshal(*state)
+	if nil != err {
+		log.Error(err)
+	}
+	log.Infof("result = %v", string(jsonState))
 }
 
 type ModuleInput struct {
-	Name          string
+	Name          string `form:"Name" json:"Name" xml:"Name"`
 	IsLoaded      bool
-	AsArgument    []*ResourceArgument
-	AsModuleInput []*ModuleInput
+	AsArgument    []*ResourceArgument `form:"AsArgument" json:"AsArgument" xml:"AsArgument"`
+	AsModuleInput []*ModuleInput      `form:"AsModuleInput" json:"AsModuleInput" xml:"AsModuleInput"`
 }
 
 type ModuleOutput struct {
-	Name             string
+	Name             string `form:"Name" json:"Name" xml:"Name"`
 	IsLoaded         bool
-	FromAttribute    []*ResourceAttribute
-	FromModuleOutput []*ModuleOutput
+	FromAttribute    []*ResourceAttribute `form:"FromAttribute" json:"FromAttribute" xml:"FromAttribute"`
+	FromModuleOutput []*ModuleOutput      `form:"FromModuleOutput" json:"FromModuleOutput" xml:"FromModuleOutput"`
 }
 
 type Module struct {
-	Name     string
+	Name     string `form:"Name" json:"Name" xml:"Name"`
 	IsLoaded bool
-	Inputs   []*ModuleInput
-	Outputs  []*ModuleOutput
+	Inputs   []*ModuleInput  `form:"Inputs" json:"Inputs" xml:"Inputs"`
+	Outputs  []*ModuleOutput `form:"Outputs" json:"Outputs" xml:"Outputs"`
 }
 
 type HierarchyState struct {
-	AllModules []Module
+	AllModules []Module `form:"AllModules" json:"AllModules" xml:"AllModules"`
 	allInputs  []ModuleInput
 	allOutputs []ModuleOutput
 
@@ -121,6 +129,22 @@ func (h *HierarchyState) NewInput(module *Module, name string) *ModuleInput {
 		module.Inputs = append(module.Inputs, input)
 	}
 	return input
+}
+
+func (m *ModuleInput) AttachArgument(argument *ResourceArgument) {
+	for _, elem := range m.AsArgument {
+		if elem == argument {
+			return
+		}
+	}
+
+	m.AsArgument = append(m.AsArgument, argument)
+
+}
+
+func (h *HierarchyState) ConnectInputToArgument(module *Module, name string, argument *ResourceArgument) {
+	value := h.NewInput(module, name)
+	value.AttachArgument(argument)
 }
 
 func (h *HierarchyState) NewOutput(module *Module, name string) *ModuleOutput {
@@ -162,7 +186,7 @@ func loadModule(moduleRoot string, path string, awsResources []Resource, state *
 
 	log.Debugf("module loading: loaded module: %+v", module)
 
-	return nil, nil
+	return state, nil
 }
 
 func processModuleObject(module *Module, object *ast.ObjectItem, awsResources []Resource, state *HierarchyState) (*HierarchyState, error) {
@@ -207,13 +231,32 @@ func processResource(module *Module, object *ast.ObjectType, resourceName []stri
 				log.Error("process resource: wrong number of keys, expected 1")
 				return
 			}
+			fieldResourceName := resourceName
 			for _, k := range i.Keys {
-				resourceName = append(resourceName, k.Token.Text)
+				fieldResourceName = append(fieldResourceName, k.Token.Text)
 			}
-			awsArgument := getArgumentByName([]string{resourceName[0], resourceName[2]}, awsResources)
-			log.Debug("\t\t argument = ", awsArgument)
 
-			log.Debug("\t\t\tNODE = ", i.Val)
+			switch value := i.Val.(type) {
+			case *ast.LiteralType:
+				log.Debug("Value = ", value.Token.Text)
+				re := regexp.MustCompile("\\${var\\.([-a-zA-Z_]*)}")
+
+				attributesMatched := re.FindStringSubmatch(value.Token.Text)
+				if len(attributesMatched) != 2 {
+					log.Errorf("process resource: wrong number of matches of regexp. match: %v", attributesMatched)
+					continue
+				}
+
+				variableName := attributesMatched[1]
+
+				if "" != variableName {
+					awsArgument := getArgumentByName([]string{fieldResourceName[0], fieldResourceName[2]}, awsResources)
+
+					state.ConnectInputToArgument(module, variableName, awsArgument)
+				}
+			default:
+				log.Warningf("process resource: unsupported value type for resourceName: %v value: %+v", fieldResourceName, value)
+			}
 		}
 	}
 }
@@ -236,14 +279,24 @@ func loadResources(path string) ([]Resource, error) {
 func getArgumentByName(argName []string, awsResources []Resource) *ResourceArgument {
 	if len(argName) < 2 {
 		log.Error("get argument by name: too short name")
+		return nil
 	}
-
 	log.Debug("argName = ", argName)
 
+	s1, err := strconv.Unquote(argName[0])
+	if err != nil {
+		s1 = argName[0]
+	}
+
+	s2, err := strconv.Unquote(argName[1])
+	if err != nil {
+		s2 = argName[1]
+	}
+
 	for _, res := range awsResources {
-		if res.Name == argName[0] {
+		if res.Name == s1 {
 			for _, arg := range res.Arguments {
-				if arg.Name == argName[1] {
+				if arg.Name == s2 {
 					return &arg
 				}
 			}
