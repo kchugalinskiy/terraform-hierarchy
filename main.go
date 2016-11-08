@@ -49,18 +49,10 @@ func main() {
 
 	state := NewHierarchyState()
 
-	files, err := ioutil.ReadDir(*rootDir)
+	_, err = loadModule(*rootDir, ".", awsResources, state)
+
 	if err != nil {
-		log.Error("error reading directory: ", err)
-		return
-	}
-
-	for _, file := range files {
-		state, err = loadModule(*rootDir, file.Name(), awsResources, state)
-
-		if err != nil {
-			log.Errorf("error reading file '%s' (SKIPPED): %v", file.Name(), err)
-		}
+		log.Errorf("error reading root module '%s' (SKIPPED): %v", *rootDir, err)
 	}
 
 	jsonState, err := json.Marshal(*state)
@@ -70,11 +62,21 @@ func main() {
 	log.Infof("result = %v", string(jsonState))
 }
 
+type ResourceArgumentUsage struct {
+	Arg       *ResourceArgument `form:"Arg" json:"Arg" xml:"Arg"`
+	UsagePath []string          `form:"UsagePath" json:"UsagePath" xml:"UsagePath"`
+}
+
+type ModuleInputUsage struct {
+	Input     *ResourceArgument `form:"Input" json:"Input" xml:"Input"`
+	UsagePath []string          `form:"UsagePath" json:"UsagePath" xml:"UsagePath"`
+}
+
 type ModuleInput struct {
 	Name          string `form:"Name" json:"Name" xml:"Name"`
 	IsLoaded      bool
-	AsArgument    []*ResourceArgument `form:"AsArgument" json:"AsArgument" xml:"AsArgument"`
-	AsModuleInput []*ModuleInput      `form:"AsModuleInput" json:"AsModuleInput" xml:"AsModuleInput"`
+	AsArgument    []ResourceArgumentUsage `form:"AsArgument" json:"AsArgument" xml:"AsArgument"`
+	AsModuleInput []ModuleInputUsage      `form:"AsModuleInput" json:"AsModuleInput" xml:"AsModuleInput"`
 }
 
 type ModuleOutput struct {
@@ -85,10 +87,11 @@ type ModuleOutput struct {
 }
 
 type Module struct {
-	Name     string `form:"Name" json:"Name" xml:"Name"`
-	IsLoaded bool
-	Inputs   []*ModuleInput  `form:"Inputs" json:"Inputs" xml:"Inputs"`
-	Outputs  []*ModuleOutput `form:"Outputs" json:"Outputs" xml:"Outputs"`
+	Name       string `form:"Name" json:"Name" xml:"Name"`
+	IsLoaded   bool
+	Submodules []*Module
+	Inputs     []*ModuleInput  `form:"Inputs" json:"Inputs" xml:"Inputs"`
+	Outputs    []*ModuleOutput `form:"Outputs" json:"Outputs" xml:"Outputs"`
 }
 
 type HierarchyState struct {
@@ -131,20 +134,20 @@ func (h *HierarchyState) NewInput(module *Module, name string) *ModuleInput {
 	return input
 }
 
-func (m *ModuleInput) AttachArgument(argument *ResourceArgument) {
+func (m *ModuleInput) AttachArgument(usagePath []string, argument *ResourceArgument) {
 	for _, elem := range m.AsArgument {
-		if elem == argument {
+		if elem.Arg == argument {
 			return
 		}
 	}
 
-	m.AsArgument = append(m.AsArgument, argument)
+	m.AsArgument = append(m.AsArgument, ResourceArgumentUsage{Arg: argument, UsagePath: usagePath})
 
 }
 
-func (h *HierarchyState) ConnectInputToArgument(module *Module, name string, argument *ResourceArgument) {
+func (h *HierarchyState) ConnectInputToArgument(module *Module, name string, usagePath []string, argument *ResourceArgument) {
 	value := h.NewInput(module, name)
-	value.AttachArgument(argument)
+	value.AttachArgument(usagePath, argument)
 }
 
 func (h *HierarchyState) NewOutput(module *Module, name string) *ModuleOutput {
@@ -159,20 +162,58 @@ func (h *HierarchyState) NewOutput(module *Module, name string) *ModuleOutput {
 	return output
 }
 
-func loadModule(moduleRoot string, path string, awsResources []Resource, state *HierarchyState) (*HierarchyState, error) {
-	modulePath := filepath.Join(moduleRoot, path)
+func loadModule(terraformRoot string, moduleRoot string, awsResources []Resource, state *HierarchyState) (*Module, error) {
+	modulePath := filepath.Join(terraformRoot, moduleRoot)
 	log.Debug("loading module: ", modulePath)
 
 	module := state.NewModule(moduleRoot)
 
-	bytes, err := ioutil.ReadFile(modulePath)
+	files, err := ioutil.ReadDir(modulePath)
 	if err != nil {
-		return nil, fmt.Errorf("module loading: %v", err)
+		return nil, fmt.Errorf("error reading directory: ", err)
+	}
+
+	for _, file := range files {
+
+		if file.IsDir() {
+			log.Debug(file.Name())
+
+			log.Info("load module = ", filepath.Join(moduleRoot, file.Name()))
+			childModule, err := loadModule(*rootDir, filepath.Join(moduleRoot, file.Name()), awsResources, state)
+
+			if err != nil {
+				log.Errorf("error reading file '%s' (SKIPPED): %v", file.Name(), err)
+			}
+
+			module.Submodules = append(module.Submodules, childModule)
+		} else {
+			moduleFile := filepath.Join(modulePath, file.Name())
+			log.Info("moduleFile = ", moduleFile)
+			_, err = loadModuleFile(module, moduleFile, awsResources, state)
+			if err != nil {
+				log.Errorf("error reading file '%s' (SKIPPED): %v", moduleFile, err)
+			}
+		}
+	}
+	return module, nil
+}
+
+func loadModuleFile(module *Module, filePath string, awsResources []Resource, state *HierarchyState) (*HierarchyState, error) {
+	re := regexp.MustCompile(".*\\.tf")
+	if !re.MatchString(filePath) {
+		return state, nil
+	}
+
+	log.Debug("module file loading: ", filePath)
+
+	bytes, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("module file loading (%s): %v", filePath, err)
 	}
 
 	hclFile, err := hcl.Parse(string(bytes))
 	if err != nil {
-		return nil, fmt.Errorf("module loading: unmarshalling from hcl: %v", err)
+		return nil, fmt.Errorf("module file loading (%s): unmarshalling from hcl: %v", filePath, err)
 	}
 
 	objects := hclFile.Node.(*ast.ObjectList)
@@ -180,11 +221,11 @@ func loadModule(moduleRoot string, path string, awsResources []Resource, state *
 	for _, objItem := range objects.Items {
 		_, err = processModuleObject(module, objItem, awsResources, state)
 		if nil != err {
-			log.Warning("module loading: error processing module object: ", err)
+			log.Warningf("module file loading (%s): error processing module object: %v", filePath, err)
 		}
 	}
 
-	log.Debugf("module loading: loaded module: %+v", module)
+	log.Debugf("module file loading (%s): loaded module: %+v", filePath, module)
 
 	return state, nil
 }
@@ -192,9 +233,7 @@ func loadModule(moduleRoot string, path string, awsResources []Resource, state *
 func processModuleObject(module *Module, object *ast.ObjectItem, awsResources []Resource, state *HierarchyState) (*HierarchyState, error) {
 	var strKeys []string
 
-	log.Debug("KEYS")
 	for _, key := range object.Keys {
-		log.Debug(key.Token.Text)
 		strKeys = append(strKeys, key.Token.Text)
 	}
 
@@ -252,7 +291,7 @@ func processResource(module *Module, object *ast.ObjectType, resourceName []stri
 				if "" != variableName {
 					awsArgument := getArgumentByName([]string{fieldResourceName[0], fieldResourceName[2]}, awsResources)
 
-					state.ConnectInputToArgument(module, variableName, awsArgument)
+					state.ConnectInputToArgument(module, variableName, fieldResourceName, awsArgument)
 				}
 			default:
 				log.Warningf("process resource: unsupported value type for resourceName: %v value: %+v", fieldResourceName, value)
