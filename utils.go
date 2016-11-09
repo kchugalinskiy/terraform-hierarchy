@@ -1,7 +1,9 @@
 package main
 
 import (
+	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 func unquote(s string) string {
@@ -59,4 +61,9 @@ func Map(vs []string, f func(string) string) []string {
 		vsm[i] = f(v)
 	}
 	return vsm
+}
+
+func getModuleName(rootDir string, moduleRoot string) string {
+	components := Map(strings.Split(moduleRoot, string(filepath.Separator)), unquote)
+	return strings.Join(components, ".")
 }

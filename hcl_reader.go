@@ -16,7 +16,7 @@ func loadModule(terraformRoot string, moduleRoot string, awsResources []Resource
 	modulePath := filepath.Join(terraformRoot, moduleRoot)
 	log.Debug("loading module: ", modulePath)
 
-	module := state.NewModule(moduleRoot)
+	module := state.NewModule(getModuleName(terraformRoot, moduleRoot))
 
 	files, err := ioutil.ReadDir(modulePath)
 	if err != nil {
