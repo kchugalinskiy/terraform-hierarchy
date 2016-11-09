@@ -128,24 +128,31 @@ func processResource(module *Module, object *ast.ObjectType, resourceName []stri
 			switch value := i.Val.(type) {
 			case *ast.LiteralType:
 				log.Debug("Value = ", value.Token.Text)
-				re := regexp.MustCompile("var\\.([-a-zA-Z_]*)")
-
-				attributesMatched := re.FindStringSubmatch(value.Token.Text)
-				if len(attributesMatched) != 2 {
-					log.Debugf("process resource: wrong number of matches of regexp. match: %v", attributesMatched)
-					continue
-				}
-
-				variableName := attributesMatched[1]
-
-				if "" != variableName {
-					awsArgument := getArgumentByName([]string{fieldResourceName[0], fieldResourceName[2]}, awsResources)
-
-					state.ConnectInputToArgument(module, variableName, fieldResourceName, awsArgument)
-				}
+				findVariableUsages(value.Token.Text, module, fieldResourceName, awsResources, state)
 			default:
 				log.Warningf("process resource: unsupported value type for resourceName: %v value: %+v", fieldResourceName, value)
 			}
+		}
+	}
+}
+
+func findVariableUsages(token string, module *Module, fieldResourceName []string, awsResources []Resource, state *HierarchyState) {
+	re := regexp.MustCompile("var\\.([-a-zA-Z_]*)")
+
+	attributesMatched := re.FindAllStringSubmatch(token, -1)
+
+	for i := 0; i < len(attributesMatched); i++ {
+		matches := attributesMatched[i]
+
+		if len(matches) != 2 {
+			log.Debugf("wront number of pattern matches in token %v: %v", token, matches)
+		}
+
+		variableName := matches[1]
+		if "" != variableName {
+			awsArgument := getArgumentByName([]string{fieldResourceName[0], fieldResourceName[2]}, awsResources)
+
+			state.ConnectInputToArgument(module, variableName, fieldResourceName, awsArgument)
 		}
 	}
 }
