@@ -42,7 +42,7 @@ func main() {
 
 	state := NewHierarchyState()
 
-	_, err = loadModule(*rootDir, ".", awsResources, state)
+	err = loadModule(*rootDir, ".", awsResources, state)
 
 	if err != nil {
 		log.Errorf("error reading root module '%s' (SKIPPED): %v", *rootDir, err)

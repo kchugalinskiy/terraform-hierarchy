@@ -4,14 +4,15 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
+// arguments/inputs
 type ResourceArgumentUsage struct {
 	Arg       *ResourceArgument `form:"Arg" json:"Arg" xml:"Arg"`
-	UsagePath []string          `form:"UsagePath" json:"UsagePath" xml:"UsagePath"`
+	UsagePath [][]string        `form:"UsagePath" json:"UsagePath" xml:"UsagePath"`
 }
 
 type ModuleInputUsage struct {
-	Input     *ResourceArgument `form:"Input" json:"Input" xml:"Input"`
-	UsagePath []string          `form:"UsagePath" json:"UsagePath" xml:"UsagePath"`
+	Input     *ModuleInstance `form:"Input" json:"Input" xml:"Input"`
+	UsagePath [][]string      `form:"UsagePath" json:"UsagePath" xml:"UsagePath"`
 }
 
 type ModuleInput struct {
@@ -21,21 +22,37 @@ type ModuleInput struct {
 	AsModuleInput []ModuleInputUsage      `form:"AsModuleInput" json:"AsModuleInput" xml:"AsModuleInput"`
 }
 
+// attributes/outputs
+type ResourceAttributeUsage struct {
+	Attr *ResourceAttribute `form:"Arg" json:"Arg" xml:"Arg"`
+}
+
+type ModuleOutputUsage struct {
+	Input *ModuleInstance `form:"Input" json:"Input" xml:"Input"`
+}
+
 type ModuleOutput struct {
 	Name             string `form:"Name" json:"Name" xml:"Name"`
 	IsLoaded         bool
-	FromAttribute    []*ResourceAttribute `form:"FromAttribute" json:"FromAttribute" xml:"FromAttribute"`
-	FromModuleOutput []*ModuleOutput      `form:"FromModuleOutput" json:"FromModuleOutput" xml:"FromModuleOutput"`
+	FromAttribute    []ResourceAttributeUsage `form:"FromAttribute" json:"FromAttribute" xml:"FromAttribute"`
+	FromModuleOutput []ModuleOutputUsage      `form:"FromModuleOutput" json:"FromModuleOutput" xml:"FromModuleOutput"`
+}
+
+// modules
+type ModuleInstance struct {
+	InstanceName string
+	Instance     *Module
 }
 
 type Module struct {
-	Name       string `form:"Name" json:"Name" xml:"Name"`
-	IsLoaded   bool
-	Submodules []*Module
-	Inputs     []*ModuleInput  `form:"Inputs" json:"Inputs" xml:"Inputs"`
-	Outputs    []*ModuleOutput `form:"Outputs" json:"Outputs" xml:"Outputs"`
+	Name            string `form:"Name" json:"Name" xml:"Name"`
+	IsLoaded        bool
+	ModuleInstances []ModuleInstance
+	Inputs          []*ModuleInput  `form:"Inputs" json:"Inputs" xml:"Inputs"`
+	Outputs         []*ModuleOutput `form:"Outputs" json:"Outputs" xml:"Outputs"`
 }
 
+// The state
 type HierarchyState struct {
 	AllModules []Module `form:"AllModules" json:"AllModules" xml:"AllModules"`
 	allInputs  []ModuleInput
@@ -54,6 +71,21 @@ func NewHierarchyState() *HierarchyState {
 	}
 }
 
+type VariableID string
+
+type ResourceFieldID struct {
+	Name         string
+	InstanceName string
+	FieldName    string
+}
+
+type ModuleFieldID struct {
+	InstanceName string
+	FieldName    string
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Module methods
 func (h *HierarchyState) NewModule(name string) *Module {
 	m, found := h.allModulesMap[name]
 	if !found {
@@ -64,7 +96,25 @@ func (h *HierarchyState) NewModule(name string) *Module {
 	return m
 }
 
-func (h *HierarchyState) NewInput(module *Module, name string) *ModuleInput {
+func (m *Module) FindModuleInstance(instanceName string) *ModuleInstance {
+	for _, instance := range m.ModuleInstances {
+		if instance.InstanceName == instanceName {
+			return &instance
+		}
+	}
+	return nil
+}
+
+func (m *Module) NewInstance(instanceName string, instance *Module) {
+	if nil == m.FindModuleInstance(instanceName) {
+		m.ModuleInstances = append(m.ModuleInstances, ModuleInstance{Instance: instance, InstanceName: instanceName})
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Module inputs
+func (h *HierarchyState) NewInput(module *Module, id VariableID) *ModuleInput {
+	name := string(id)
 	inputKey := module.Name + "." + name
 	input, found := h.allInputsMap[inputKey]
 	if !found {
@@ -83,18 +133,36 @@ func (m *ModuleInput) AttachArgument(usagePath []string, argument *ResourceArgum
 		}
 	}
 
-	m.AsArgument = append(m.AsArgument, ResourceArgumentUsage{Arg: argument, UsagePath: usagePath})
+	m.AsArgument = append(m.AsArgument, ResourceArgumentUsage{Arg: argument, UsagePath: [][]string{usagePath}})
 }
 
-func (h *HierarchyState) ConnectInputToArgument(module *Module, name string, usagePath []string, argument *ResourceArgument) {
+func (m *ModuleInput) AttachModuleInput(usagePath []string, instance *ModuleInstance) {
+	for _, elem := range m.AsModuleInput {
+		if elem.Input == instance {
+			return
+		}
+	}
 
-	log.Debugf("module %v name %v attach argument %v", module.Name, name, argument)
+	m.AsModuleInput = append(m.AsModuleInput, ModuleInputUsage{Input: instance, UsagePath: [][]string{usagePath}})
+}
 
-	value := h.NewInput(module, name)
+func (h *HierarchyState) ConnectInputToArgument(module *Module, id VariableID, usagePath []string, argument *ResourceArgument) {
+	log.Debugf("module %v name %v attach argument %v", module.Name, id, argument)
+	value := h.NewInput(module, id)
 	value.AttachArgument(usagePath, argument)
 }
 
-func (h *HierarchyState) NewOutput(module *Module, name string) *ModuleOutput {
+func (h *HierarchyState) ConnectInputToModuleInput(module *Module, id VariableID, usagePath []string, instance *ModuleInstance) {
+	log.Debugf("module %v name %v attach input %v", module.Name, id, instance)
+	value := h.NewInput(module, id)
+	value.AttachModuleInput(usagePath, instance)
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Module outputs
+
+func (h *HierarchyState) NewOutput(module *Module, id VariableID) *ModuleOutput {
+	name := string(id)
 	outputKey := module.Name + "." + name
 	output, found := h.allOutputsMap[outputKey]
 	if !found {
@@ -104,4 +172,20 @@ func (h *HierarchyState) NewOutput(module *Module, name string) *ModuleOutput {
 		module.Outputs = append(module.Outputs, output)
 	}
 	return output
+}
+
+func (m *ModuleOutput) AttachAttribute(attribute *ResourceAttribute) {
+	for _, elem := range m.FromAttribute {
+		if elem.Attr == attribute {
+			return
+		}
+	}
+
+	m.FromAttribute = append(m.FromAttribute, ResourceAttributeUsage{Attr: attribute})
+}
+
+func (h *HierarchyState) ConnectOutputToAttribute(module *Module, id VariableID, attribute *ResourceAttribute) {
+	log.Debugf("module %v name %v attach attribute %v", module.Name, id, attribute)
+	value := h.NewOutput(module, id)
+	value.AttachAttribute(attribute)
 }

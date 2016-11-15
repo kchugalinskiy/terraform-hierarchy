@@ -12,7 +12,9 @@ import (
 	"github.com/hashicorp/hcl/hcl/ast"
 )
 
-func loadModule(terraformRoot string, moduleRoot string, awsResources []Resource, state *HierarchyState) (*Module, error) {
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// file loading
+func loadModule(terraformRoot string, moduleRoot string, awsResources []Resource, state *HierarchyState) error {
 	modulePath := filepath.Join(terraformRoot, moduleRoot)
 	log.Debug("loading module: ", modulePath)
 
@@ -20,7 +22,7 @@ func loadModule(terraformRoot string, moduleRoot string, awsResources []Resource
 
 	files, err := ioutil.ReadDir(modulePath)
 	if err != nil {
-		return nil, fmt.Errorf("error reading directory: ", err)
+		return fmt.Errorf("error reading directory: ", err)
 	}
 
 	for _, file := range files {
@@ -29,13 +31,11 @@ func loadModule(terraformRoot string, moduleRoot string, awsResources []Resource
 			log.Debug(file.Name())
 
 			log.Info("load module = ", filepath.Join(moduleRoot, file.Name()))
-			childModule, err := loadModule(*rootDir, filepath.Join(moduleRoot, file.Name()), awsResources, state)
+			err := loadModule(*rootDir, filepath.Join(moduleRoot, file.Name()), awsResources, state)
 
 			if err != nil {
 				log.Errorf("error reading file '%s' (SKIPPED): %v", file.Name(), err)
 			}
-
-			module.Submodules = append(module.Submodules, childModule)
 		} else {
 			moduleFile := filepath.Join(modulePath, file.Name())
 			log.Info("moduleFile = ", moduleFile)
@@ -45,7 +45,7 @@ func loadModule(terraformRoot string, moduleRoot string, awsResources []Resource
 			}
 		}
 	}
-	return module, nil
+	return nil
 }
 
 func loadModuleFile(module *Module, filePath string, awsResources []Resource, state *HierarchyState) (*HierarchyState, error) {
@@ -80,6 +80,8 @@ func loadModuleFile(module *Module, filePath string, awsResources []Resource, st
 	return state, nil
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// process one of file root objects
 func processModuleObject(module *Module, object *ast.ObjectItem, awsResources []Resource, state *HierarchyState) (*HierarchyState, error) {
 	var strKeys []string
 
@@ -93,17 +95,16 @@ func processModuleObject(module *Module, object *ast.ObjectItem, awsResources []
 
 	switch strKeys[0] {
 	case "variable":
-		moduleInput := state.NewInput(module, unquote(strKeys[1]))
+		moduleInput := state.NewInput(module, VariableID(unquote(strKeys[1])))
 		moduleInput.IsLoaded = true
-		log.Debug(moduleInput)
 	case "output":
-		moduleOutput := state.NewOutput(module, unquote(strKeys[1]))
+		moduleOutput := state.NewOutput(module, VariableID(unquote(strKeys[1])))
 		moduleOutput.IsLoaded = true
-		log.Debug(moduleOutput)
+		processOutput(module, object.Val.(*ast.ObjectType), Map(strKeys[1:], unquote), awsResources, state)
 	case "resource":
 		processResource(module, object.Val.(*ast.ObjectType), Map(strKeys[1:], unquote), awsResources, state)
 	case "module":
-		//module instantiation
+		processModule(module, object.Val.(*ast.ObjectType), Map(strKeys[1:], unquote), awsResources, state)
 	default:
 		log.Warning("process module object: unknown item type: ", strKeys[0])
 	}
@@ -111,9 +112,91 @@ func processModuleObject(module *Module, object *ast.ObjectItem, awsResources []
 	return state, nil
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// process resource
 func processResource(module *Module, object *ast.ObjectType, resourceName []string, awsResources []Resource, state *HierarchyState) {
-	log.Debug("resource name = ", resourceName)
+	if nil != object.List && nil != object.List.Items {
+		for _, i := range object.List.Items {
+			if len(i.Keys) != 1 {
+				log.Error("process resource: wrong number of keys, expected 1")
+				return
+			}
+			fieldResourceName := resourceName
+			for _, k := range i.Keys {
+				fieldResourceName = append(fieldResourceName, k.Token.Text)
+			}
 
+			switch value := i.Val.(type) {
+			case *ast.LiteralType:
+				findInputVariableAsArgumentUsages(value.Token.Text, module, fieldResourceName, awsResources, state)
+				//findModuleOutputUsages(value.Token.Text, module, fieldResourceName, awsResources, state)
+			default:
+				log.Warningf("process resource: unsupported value type for resourceName: %v value: %+v", fieldResourceName, value)
+			}
+		}
+	}
+}
+
+func findModuleOutputUsages(token string, module *Module, fieldResourceName []string, awsResources []Resource, state *HierarchyState) {
+	log.Fatal("NOT IMPLEMENTED!")
+}
+
+func findInputVariableAsArgumentUsages(token string, module *Module, fieldResourceName []string, awsResources []Resource, state *HierarchyState) {
+	variableUsages := findAllVariables(token)
+
+	resourceName := fieldResourceName[0]
+	resourceFieldName := fieldResourceName[2]
+	for i := 0; i < len(variableUsages); i++ {
+		variableName := variableUsages[i]
+		awsArgument := getArgumentByName(resourceName, resourceFieldName, awsResources)
+		state.ConnectInputToArgument(module, variableName, fieldResourceName, awsArgument)
+	}
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// process module instance
+func processModule(module *Module, object *ast.ObjectType, resourceName []string, awsResources []Resource, state *HierarchyState) {
+	log.Error("NOT IMPLEMENTED: add support for module instance add")
+	if nil != object.List && nil != object.List.Items {
+		for _, i := range object.List.Items {
+			if len(i.Keys) != 1 {
+				log.Error("process resource: wrong number of keys, expected 1")
+				return
+			}
+			fieldResourceName := resourceName
+			for _, k := range i.Keys {
+				fieldResourceName = append(fieldResourceName, k.Token.Text)
+			}
+
+			switch value := i.Val.(type) {
+			case *ast.LiteralType:
+				findInputVariableModuleInputUsages(value.Token.Text, module, fieldResourceName, awsResources, state)
+				//findModuleOutputUsages(value.Token.Text, module, fieldResourceName, awsResources, state)
+			default:
+				log.Warningf("process resource: unsupported value type for resourceName: %v value: %+v", fieldResourceName, value)
+			}
+		}
+	}
+}
+
+func findInputVariableModuleInputUsages(token string, module *Module, fieldResourceName []string, awsResources []Resource, state *HierarchyState) {
+	variableUsages := findAllVariables(token)
+
+	for i := 0; i < len(variableUsages); i++ {
+
+		variableName := variableUsages[i]
+		if "" != variableName {
+			moduleInstanceName := fieldResourceName[0]
+			//awsArgument := getArgumentByName([]string{fieldResourceName[0], fieldResourceName[2]}, awsResources)
+			moduleInstance := module.FindModuleInstance(moduleInstanceName)
+			state.ConnectInputToModuleInput(module, variableName, fieldResourceName, moduleInstance)
+		}
+	}
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// process module output
+func processOutput(module *Module, object *ast.ObjectType, resourceName []string, awsResources []Resource, state *HierarchyState) {
 	if nil != object.List && nil != object.List.Items {
 		for _, i := range object.List.Items {
 			if len(i.Keys) != 1 {
@@ -128,7 +211,7 @@ func processResource(module *Module, object *ast.ObjectType, resourceName []stri
 			switch value := i.Val.(type) {
 			case *ast.LiteralType:
 				log.Debug("Value = ", value.Token.Text)
-				findVariableUsages(value.Token.Text, module, fieldResourceName, awsResources, state)
+				findModuleOutputValues(value.Token.Text, module, fieldResourceName, awsResources, state)
 			default:
 				log.Warningf("process resource: unsupported value type for resourceName: %v value: %+v", fieldResourceName, value)
 			}
@@ -136,26 +219,91 @@ func processResource(module *Module, object *ast.ObjectType, resourceName []stri
 	}
 }
 
-func findVariableUsages(token string, module *Module, fieldResourceName []string, awsResources []Resource, state *HierarchyState) {
-	re := regexp.MustCompile("var\\.([-a-zA-Z_]*)")
+func findModuleOutputValues(token string, module *Module, fieldResourceName []string, awsResources []Resource, state *HierarchyState) {
+	resourceFields := findAllResourceFields(token)
+	moduleOutputName := fieldResourceName[1]
 
-	attributesMatched := re.FindAllStringSubmatch(token, -1)
+	for _, resourceField := range resourceFields {
+		awsAttribute := getAttributeByName(resourceField.Name, resourceField.FieldName, awsResources)
+		state.ConnectOutputToAttribute(module, VariableID(moduleOutputName), awsAttribute)
+		log.Debugf("field resource name = %+v awsArgument = %+v", resourceField, awsAttribute)
+	}
 
-	for i := 0; i < len(attributesMatched); i++ {
-		matches := attributesMatched[i]
+	moduleFields := findAllModuleFields(token)
+	log.Errorf("!!!!!!!!moduleFields = %+v", moduleFields)
 
-		if len(matches) != 2 {
-			log.Debugf("wront number of pattern matches in token %v: %v", token, matches)
-		}
+	// for i := 0; i < len(awsResourcesUsed); i++ {
+	// 	matches := awsResourcesUsed[i]
 
-		variableName := matches[1]
-		if "" != variableName {
-			awsArgument := getArgumentByName([]string{fieldResourceName[0], fieldResourceName[2]}, awsResources)
+	// 	if len(matches) != 4 {
+	// 		log.Errorf("wront number of pattern matches in token %v: %v", token, matches)
+	// 		continue
+	// 	}
 
-			state.ConnectInputToArgument(module, variableName, fieldResourceName, awsArgument)
+	//variableName := matches[1]
+	//if "" != variableName {
+	//moduleInstanceName := fieldResourceName[0]
+	//awsArgument := getArgumentByName([]string{fieldResourceName[0], fieldResourceName[2]}, awsResources)
+	//moduleInstance := module.FindModuleInstance(moduleInstanceName)
+	//state.ConnectInputToModuleInput(module, variableName, fieldResourceName, moduleInstance)
+	//}
+	// }
+
+	// modulesUsed := reModule.FindAllStringSubmatch(token, -1)
+	// log.Errorf("modules used: %+v", modulesUsed)
+	// for i := 0; i < len(modulesUsed); i++ {
+	// 	matches := modulesUsed[i]
+	// }
+
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// regex utilities
+
+func findAllVariables(token string) []VariableID {
+	re := regexp.MustCompile("var\\.([-a-zA-Z0-9_]*)")
+	matches := re.FindAllStringSubmatch(token, -1)
+
+	result := make([]VariableID, 0)
+	for i := 0; i < len(matches); i++ {
+		if len(matches[i]) == 2 {
+			result = append(result, VariableID(matches[i][1]))
 		}
 	}
+
+	return result
 }
+
+func findAllResourceFields(token string) []ResourceFieldID {
+	re := regexp.MustCompile("(aws_[-a-zA-Z_0-9]*)\\.([-a-zA-Z_0-9]*)\\.([-a-zA-Z_0-9]*)")
+	matches := re.FindAllStringSubmatch(token, -1)
+
+	result := make([]ResourceFieldID, 0)
+	for i := 0; i < len(matches); i++ {
+		if len(matches[i]) == 4 {
+			result = append(result, ResourceFieldID{Name: matches[i][1], InstanceName: matches[i][2], FieldName: matches[i][3]})
+		}
+	}
+
+	return result
+}
+
+func findAllModuleFields(token string) []ModuleFieldID {
+	re := regexp.MustCompile("module\\.([-a-zA-Z_0-9]*)\\.([-a-zA-Z_0-9]*)")
+	matches := re.FindAllStringSubmatch(token, -1)
+
+	result := make([]ModuleFieldID, 0)
+	for i := 0; i < len(matches); i++ {
+		if len(matches[i]) == 3 {
+			result = append(result, ModuleFieldID{InstanceName: matches[i][1], FieldName: matches[i][2]})
+		}
+	}
+
+	return result
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// aws resource description
 
 func loadResources(path string) ([]Resource, error) {
 	var resources []Resource
@@ -172,15 +320,9 @@ func loadResources(path string) ([]Resource, error) {
 	return resources, nil
 }
 
-func getArgumentByName(argName []string, awsResources []Resource) *ResourceArgument {
-	if len(argName) < 2 {
-		log.Error("get argument by name: too short name")
-		return nil
-	}
-	log.Debug("argName = ", argName)
-
-	s1 := unquote(argName[0])
-	s2 := unquote(argName[1])
+func getArgumentByName(resourceName string, fieldName string, awsResources []Resource) *ResourceArgument {
+	s1 := unquote(resourceName)
+	s2 := unquote(fieldName)
 
 	for _, res := range awsResources {
 		if res.Name == s1 {
@@ -194,3 +336,22 @@ func getArgumentByName(argName []string, awsResources []Resource) *ResourceArgum
 	}
 	return nil
 }
+
+func getAttributeByName(resourceName string, fieldName string, awsResources []Resource) *ResourceAttribute {
+	s1 := unquote(resourceName)
+	s2 := unquote(fieldName)
+
+	for _, res := range awsResources {
+		if res.Name == s1 {
+			for _, arg := range res.Attributes {
+				if arg.Name == s2 {
+					return &arg
+				}
+			}
+			break
+		}
+	}
+	return nil
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
