@@ -66,6 +66,9 @@ type HierarchyState struct {
 
 func NewHierarchyState() *HierarchyState {
 	return &HierarchyState{
+		AllModules:    make([]Module, 0, 128),
+		allInputs:     make([]ModuleInput, 0, 2048),
+		allOutputs:    make([]ModuleOutput, 0, 2048),
 		allModulesMap: make(map[string]*Module),
 		allInputsMap:  make(map[string]*ModuleInput),
 		allOutputsMap: make(map[string]*ModuleOutput),
@@ -90,7 +93,14 @@ type ModuleFieldID struct {
 func (h *HierarchyState) NewModule(name string) *Module {
 	m, found := h.allModulesMap[name]
 	if !found {
-		h.AllModules = append(h.AllModules, Module{Name: name, IsLoaded: false})
+		h.AllModules = append(h.AllModules,
+			Module{
+				Name:            name,
+				IsLoaded:        false,
+				ModuleInstances: make([]ModuleInstance, 0, 128),
+				Inputs:          make([]*ModuleInput, 0, 128),
+				Outputs:         make([]*ModuleOutput, 0, 128),
+			})
 		m = &h.AllModules[len(h.AllModules)-1]
 		h.allModulesMap[name] = m
 	}
@@ -117,6 +127,11 @@ func (m *Module) NewInstance(instanceName string, instanceSubmodulePath string, 
 func (h *HierarchyState) NewInput(module *Module, id VariableID) *ModuleInput {
 	name := string(id)
 	inputKey := module.Name + "." + name
+	if "." == module.Name {
+		// root module
+		inputKey = "." + name
+	}
+
 	input, found := h.allInputsMap[inputKey]
 	if !found {
 		h.allInputs = append(h.allInputs, ModuleInput{Name: name, IsLoaded: false})
@@ -165,6 +180,11 @@ func (h *HierarchyState) ConnectInputToModuleInput(module *Module, id VariableID
 func (h *HierarchyState) NewOutput(module *Module, id VariableID) *ModuleOutput {
 	name := string(id)
 	outputKey := module.Name + "." + name
+	if "." == module.Name {
+		// root module
+		outputKey = "." + name
+	}
+
 	output, found := h.allOutputsMap[outputKey]
 	if !found {
 		h.allOutputs = append(h.allOutputs, ModuleOutput{Name: name, IsLoaded: false})

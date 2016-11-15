@@ -16,7 +16,7 @@ import (
 // file loading
 func loadModule(terraformRoot string, moduleRoot string, awsResources []Resource, state *HierarchyState) error {
 	modulePath := filepath.Join(terraformRoot, moduleRoot)
-	log.Debug("loading module: ", modulePath)
+	log.Info("loading module: ", modulePath)
 
 	module := state.NewModule(getModuleName(terraformRoot, moduleRoot))
 
@@ -28,9 +28,7 @@ func loadModule(terraformRoot string, moduleRoot string, awsResources []Resource
 	for _, file := range files {
 
 		if file.IsDir() {
-			log.Debug(file.Name())
-
-			log.Debug("load module = ", filepath.Join(moduleRoot, file.Name()))
+			log.Info("load module: ", filepath.Join(moduleRoot, file.Name()))
 			err := loadModule(*rootDir, filepath.Join(moduleRoot, file.Name()), awsResources, state)
 
 			if err != nil {
@@ -54,7 +52,7 @@ func loadModuleFile(module *Module, filePath string, awsResources []Resource, st
 		return state, nil
 	}
 
-	log.Debug("module file loading: ", filePath)
+	log.Info("module file loading: ", filePath)
 
 	bytes, err := ioutil.ReadFile(filePath)
 	if err != nil {
@@ -157,6 +155,8 @@ func findInputVariableAsArgumentUsages(token string, module *Module, fieldResour
 // process module instance
 func processModule(module *Module, object *ast.ObjectType, resourceName []string, awsResources []Resource, state *HierarchyState) {
 	instanceName := resourceName[0]
+
+	log.Info("Processing module instance: ", instanceName)
 	if nil != object.List && nil != object.List.Items {
 		for _, i := range object.List.Items {
 			if len(i.Keys) != 1 {
