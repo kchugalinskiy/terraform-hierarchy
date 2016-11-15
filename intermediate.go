@@ -11,13 +11,13 @@ type ResourceArgumentUsage struct {
 }
 
 type ModuleInputUsage struct {
-	Input     *ModuleInstance
-	UsagePath [][]string `form:"UsagePath" json:"UsagePath" xml:"UsagePath"`
+	Input     *ModuleInstance `form:"Input" json:"Input" xml:"Input"`
+	UsagePath [][]string      `form:"UsagePath" json:"UsagePath" xml:"UsagePath"`
 }
 
 type ModuleInput struct {
-	Name          string `form:"Name" json:"Name" xml:"Name"`
-	IsLoaded      bool
+	Name          string                  `form:"Name" json:"Name" xml:"Name"`
+	IsLoaded      bool                    `form:"-" json:"-" xml:"-"`
 	AsArgument    []ResourceArgumentUsage `form:"AsArgument" json:"AsArgument" xml:"AsArgument"`
 	AsModuleInput []ModuleInputUsage      `form:"AsModuleInput" json:"AsModuleInput" xml:"AsModuleInput"`
 }
@@ -32,8 +32,8 @@ type ModuleOutputUsage struct {
 }
 
 type ModuleOutput struct {
-	Name             string `form:"Name" json:"Name" xml:"Name"`
-	IsLoaded         bool
+	Name             string                   `form:"Name" json:"Name" xml:"Name"`
+	IsLoaded         bool                     `form:"-" json:"-" xml:"-"`
 	FromAttribute    []ResourceAttributeUsage `form:"FromAttribute" json:"FromAttribute" xml:"FromAttribute"`
 	FromModuleOutput []ModuleOutputUsage      `form:"FromModuleOutput" json:"FromModuleOutput" xml:"FromModuleOutput"`
 }
@@ -41,12 +41,13 @@ type ModuleOutput struct {
 // modules
 type ModuleInstance struct {
 	InstanceName string  `form:"InstanceName" json:"InstanceName" xml:"InstanceName"`
+	ModulePath   string  `form:"ModulePath" json:"ModulePath" xml:"ModulePath"`
 	Instance     *Module `form:"-" json:"-" xml:"-"`
 }
 
 type Module struct {
-	Name            string `form:"Name" json:"Name" xml:"Name"`
-	IsLoaded        bool
+	Name            string           `form:"Name" json:"Name" xml:"Name"`
+	IsLoaded        bool             `form:"-" json:"-" xml:"-"`
 	ModuleInstances []ModuleInstance `form:"ModuleInstances" json:"ModuleInstances" xml:"ModuleInstances"`
 	Inputs          []*ModuleInput   `form:"Inputs" json:"Inputs" xml:"Inputs"`
 	Outputs         []*ModuleOutput  `form:"Outputs" json:"Outputs" xml:"Outputs"`
@@ -105,9 +106,9 @@ func (m *Module) FindModuleInstance(instanceName string) *ModuleInstance {
 	return nil
 }
 
-func (m *Module) NewInstance(instanceName string, instance *Module) {
+func (m *Module) NewInstance(instanceName string, instanceSubmodulePath string, instance *Module) {
 	if nil == m.FindModuleInstance(instanceName) {
-		m.ModuleInstances = append(m.ModuleInstances, ModuleInstance{Instance: instance, InstanceName: instanceName})
+		m.ModuleInstances = append(m.ModuleInstances, ModuleInstance{Instance: instance, ModulePath: instance.Name, InstanceName: instanceName})
 	}
 }
 

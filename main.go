@@ -31,7 +31,7 @@ type Resource struct {
 
 func main() {
 	iniflags.Parse()
-	log.SetLevel(log.DebugLevel)
+	log.SetLevel(log.InfoLevel)
 	log.Debug("reading directory: ", *rootDir)
 
 	awsResources, err := loadResources(*descriptionPath)
@@ -48,9 +48,7 @@ func main() {
 		log.Errorf("error reading root module '%s' (SKIPPED): %v", *rootDir, err)
 	}
 
-	log.Info("Modules read")
-
-	jsonState, err := json.Marshal(*state)
+	jsonState, err := json.Marshal(state.AllModules[0])
 	if nil != err {
 		log.Error(err)
 	}

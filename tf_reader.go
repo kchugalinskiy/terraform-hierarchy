@@ -30,7 +30,7 @@ func loadModule(terraformRoot string, moduleRoot string, awsResources []Resource
 		if file.IsDir() {
 			log.Debug(file.Name())
 
-			log.Info("load module = ", filepath.Join(moduleRoot, file.Name()))
+			log.Debug("load module = ", filepath.Join(moduleRoot, file.Name()))
 			err := loadModule(*rootDir, filepath.Join(moduleRoot, file.Name()), awsResources, state)
 
 			if err != nil {
@@ -38,7 +38,7 @@ func loadModule(terraformRoot string, moduleRoot string, awsResources []Resource
 			}
 		} else {
 			moduleFile := filepath.Join(modulePath, file.Name())
-			log.Info("moduleFile = ", moduleFile)
+			log.Debug("moduleFile = ", moduleFile)
 			_, err = loadModuleFile(module, moduleFile, awsResources, state)
 			if err != nil {
 				log.Errorf("error reading file '%s' (SKIPPED): %v", moduleFile, err)
@@ -157,7 +157,6 @@ func findInputVariableAsArgumentUsages(token string, module *Module, fieldResour
 // process module instance
 func processModule(module *Module, object *ast.ObjectType, resourceName []string, awsResources []Resource, state *HierarchyState) {
 	instanceName := resourceName[0]
-	module.NewInstance(instanceName, module)
 	if nil != object.List && nil != object.List.Items {
 		for _, i := range object.List.Items {
 			if len(i.Keys) != 1 {
@@ -171,12 +170,20 @@ func processModule(module *Module, object *ast.ObjectType, resourceName []string
 
 			switch value := i.Val.(type) {
 			case *ast.LiteralType:
+				registerInstance(value.Token.Text, module, fieldResourceName, instanceName, state)
 				findInputVariableModuleInputUsages(value.Token.Text, module, fieldResourceName, awsResources, state)
 				//findModuleOutputUsages(value.Token.Text, module, fieldResourceName, awsResources, state)
 			default:
 				log.Warningf("process resource: unsupported value type for resourceName: %v value: %+v", fieldResourceName, value)
 			}
 		}
+	}
+}
+
+func registerInstance(token string, module *Module, fieldResourceName []string, instanceName string, state *HierarchyState) {
+	fieldName := fieldResourceName[1]
+	if fieldName == "source" {
+		module.NewInstance(instanceName, token, module)
 	}
 }
 
