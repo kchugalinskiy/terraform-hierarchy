@@ -227,8 +227,12 @@ func processOutput(module *Module, object *ast.ObjectType, resourceName []string
 }
 
 func findModuleOutputValues(token string, module *Module, fieldResourceName []string, awsResources []Resource, state *HierarchyState) {
+	if "value" != fieldResourceName[1] {
+		return
+	}
+
 	resourceFields := findAllResourceFields(token)
-	moduleOutputName := VariableID(fieldResourceName[1])
+	moduleOutputName := VariableID(fieldResourceName[0])
 
 	for _, resourceField := range resourceFields {
 		awsAttribute := getAttributeByName(resourceField.Name, resourceField.FieldName, awsResources)
@@ -237,7 +241,6 @@ func findModuleOutputValues(token string, module *Module, fieldResourceName []st
 
 	moduleFields := findAllModuleFields(token)
 	for _, moduleField := range moduleFields {
-		log.Debugf("module output name = %+v", moduleField)
 		moduleInstance := module.FindModuleInstance(moduleField.InstanceName)
 		state.ConnectOutputToModuleOutput(moduleInstance, moduleOutputName, moduleField)
 	}

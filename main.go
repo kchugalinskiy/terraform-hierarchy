@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
+	"io/ioutil"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/vharitonsky/iniflags"
@@ -11,7 +13,7 @@ import (
 var (
 	rootDir         = flag.String("dir", ".", "start dir")
 	descriptionPath = flag.String("desc", "", "terraform markdown description")
-	outPath         = flag.String("out", "out.json", "output result filepath")
+	outPath         = flag.String("out", "", "output result filepath")
 )
 
 type Line struct {
@@ -48,9 +50,16 @@ func main() {
 		log.Errorf("error reading root module '%s' (SKIPPED): %v", *rootDir, err)
 	}
 
-	jsonState, err := json.Marshal(state.AllModules[0])
+	jsonState, err := json.Marshal(*state)
 	if nil != err {
 		log.Error(err)
 	}
-	log.Infof("result = %v", string(jsonState))
+	if "" != *outPath {
+		err = ioutil.WriteFile(*outPath, jsonState, 0755)
+		if nil != err {
+			log.Errorf("writing to file (%s) error: %v", *outPath, err)
+		}
+	} else {
+		fmt.Print(string(jsonState))
+	}
 }
