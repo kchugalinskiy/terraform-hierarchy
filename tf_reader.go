@@ -156,7 +156,8 @@ func findInputVariableAsArgumentUsages(token string, module *Module, fieldResour
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // process module instance
 func processModule(module *Module, object *ast.ObjectType, resourceName []string, awsResources []Resource, state *HierarchyState) {
-	log.Error("NOT IMPLEMENTED: add support for module instance add")
+	instanceName := resourceName[0]
+	module.NewInstance(instanceName, module)
 	if nil != object.List && nil != object.List.Items {
 		for _, i := range object.List.Items {
 			if len(i.Keys) != 1 {
@@ -230,31 +231,10 @@ func findModuleOutputValues(token string, module *Module, fieldResourceName []st
 	}
 
 	moduleFields := findAllModuleFields(token)
-	log.Errorf("!!!!!!!!moduleFields = %+v", moduleFields)
-
-	// for i := 0; i < len(awsResourcesUsed); i++ {
-	// 	matches := awsResourcesUsed[i]
-
-	// 	if len(matches) != 4 {
-	// 		log.Errorf("wront number of pattern matches in token %v: %v", token, matches)
-	// 		continue
-	// 	}
-
-	//variableName := matches[1]
-	//if "" != variableName {
-	//moduleInstanceName := fieldResourceName[0]
-	//awsArgument := getArgumentByName([]string{fieldResourceName[0], fieldResourceName[2]}, awsResources)
-	//moduleInstance := module.FindModuleInstance(moduleInstanceName)
-	//state.ConnectInputToModuleInput(module, variableName, fieldResourceName, moduleInstance)
-	//}
-	// }
-
-	// modulesUsed := reModule.FindAllStringSubmatch(token, -1)
-	// log.Errorf("modules used: %+v", modulesUsed)
-	// for i := 0; i < len(modulesUsed); i++ {
-	// 	matches := modulesUsed[i]
-	// }
-
+	for _, moduleField := range moduleFields {
+		//state.ConnectOutputToModuleOutput(module, VariableID(moduleOutputName), awsAttribute)
+		log.Debugf("module output name = %+v", moduleField)
+	}
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

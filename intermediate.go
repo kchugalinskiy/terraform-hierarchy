@@ -11,8 +11,8 @@ type ResourceArgumentUsage struct {
 }
 
 type ModuleInputUsage struct {
-	Input     *ModuleInstance `form:"Input" json:"Input" xml:"Input"`
-	UsagePath [][]string      `form:"UsagePath" json:"UsagePath" xml:"UsagePath"`
+	Input     *ModuleInstance
+	UsagePath [][]string `form:"UsagePath" json:"UsagePath" xml:"UsagePath"`
 }
 
 type ModuleInput struct {
@@ -40,16 +40,16 @@ type ModuleOutput struct {
 
 // modules
 type ModuleInstance struct {
-	InstanceName string
-	Instance     *Module
+	InstanceName string  `form:"InstanceName" json:"InstanceName" xml:"InstanceName"`
+	Instance     *Module `form:"-" json:"-" xml:"-"`
 }
 
 type Module struct {
 	Name            string `form:"Name" json:"Name" xml:"Name"`
 	IsLoaded        bool
-	ModuleInstances []ModuleInstance
-	Inputs          []*ModuleInput  `form:"Inputs" json:"Inputs" xml:"Inputs"`
-	Outputs         []*ModuleOutput `form:"Outputs" json:"Outputs" xml:"Outputs"`
+	ModuleInstances []ModuleInstance `form:"ModuleInstances" json:"ModuleInstances" xml:"ModuleInstances"`
+	Inputs          []*ModuleInput   `form:"Inputs" json:"Inputs" xml:"Inputs"`
+	Outputs         []*ModuleOutput  `form:"Outputs" json:"Outputs" xml:"Outputs"`
 }
 
 // The state

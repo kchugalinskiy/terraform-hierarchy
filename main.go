@@ -48,6 +48,8 @@ func main() {
 		log.Errorf("error reading root module '%s' (SKIPPED): %v", *rootDir, err)
 	}
 
+	log.Info("Modules read")
+
 	jsonState, err := json.Marshal(*state)
 	if nil != err {
 		log.Error(err)
