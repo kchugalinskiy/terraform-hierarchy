@@ -211,7 +211,6 @@ func processOutput(module *Module, object *ast.ObjectType, resourceName []string
 
 			switch value := i.Val.(type) {
 			case *ast.LiteralType:
-				log.Debug("Value = ", value.Token.Text)
 				findModuleOutputValues(value.Token.Text, module, fieldResourceName, awsResources, state)
 			default:
 				log.Warningf("process resource: unsupported value type for resourceName: %v value: %+v", fieldResourceName, value)
@@ -222,18 +221,18 @@ func processOutput(module *Module, object *ast.ObjectType, resourceName []string
 
 func findModuleOutputValues(token string, module *Module, fieldResourceName []string, awsResources []Resource, state *HierarchyState) {
 	resourceFields := findAllResourceFields(token)
-	moduleOutputName := fieldResourceName[1]
+	moduleOutputName := VariableID(fieldResourceName[1])
 
 	for _, resourceField := range resourceFields {
 		awsAttribute := getAttributeByName(resourceField.Name, resourceField.FieldName, awsResources)
-		state.ConnectOutputToAttribute(module, VariableID(moduleOutputName), awsAttribute)
-		log.Debugf("field resource name = %+v awsArgument = %+v", resourceField, awsAttribute)
+		state.ConnectOutputToAttribute(module, moduleOutputName, awsAttribute)
 	}
 
 	moduleFields := findAllModuleFields(token)
 	for _, moduleField := range moduleFields {
-		//state.ConnectOutputToModuleOutput(module, VariableID(moduleOutputName), awsAttribute)
 		log.Debugf("module output name = %+v", moduleField)
+		moduleInstance := module.FindModuleInstance(moduleField.InstanceName)
+		state.ConnectOutputToModuleOutput(moduleInstance, moduleOutputName, moduleField)
 	}
 }
 

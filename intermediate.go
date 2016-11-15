@@ -184,8 +184,24 @@ func (m *ModuleOutput) AttachAttribute(attribute *ResourceAttribute) {
 	m.FromAttribute = append(m.FromAttribute, ResourceAttributeUsage{Attr: attribute})
 }
 
+func (m *ModuleOutput) AttachModuleOutput(instance *ModuleInstance) {
+	for _, elem := range m.FromModuleOutput {
+		if elem.Input == instance {
+			return
+		}
+	}
+
+	m.FromModuleOutput = append(m.FromModuleOutput, ModuleOutputUsage{Input: instance})
+}
+
 func (h *HierarchyState) ConnectOutputToAttribute(module *Module, id VariableID, attribute *ResourceAttribute) {
 	log.Debugf("module %v name %v attach attribute %v", module.Name, id, attribute)
 	value := h.NewOutput(module, id)
 	value.AttachAttribute(attribute)
+}
+
+func (h *HierarchyState) ConnectOutputToModuleOutput(instance *ModuleInstance, id VariableID, moduleFieldUsage ModuleFieldID) {
+	log.Debugf("instance %v name %v attach module output %v", instance, moduleFieldUsage)
+	value := h.NewOutput(instance.Instance, id)
+	value.AttachModuleOutput(instance)
 }
